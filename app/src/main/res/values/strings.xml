@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="module_name">微信输入法 ColorOS 材质</string>
+    <string name="module_description">小布面板、高光、按键与工具栏材质，跟随系统深浅色和 COUI 主题色。适配微信输入法 3.5.5 / 4.0.0，libxposed API 102。</string>
+</resources>
