@@ -1,6 +1,6 @@
 # 微信输入法 ColorOS 17 材质模块
 
-新增 **直接修改微信输入法 APK 的独立版**：当前修正版为 `dist/WeType-4.0.0-ColorOSMaterial-1.0.0-direct-r2.apk`，针对表情、键盘选择和定制工具栏将绘制接入改为与模块一致的实际 `drawChild` 回调。无需启用 LSPosed 模块，构建及安装差异见 [direct/README.md](direct/README.md)。该 APK 已重新签名；当前仅有构建、静态和主机 JVM 验证，尚未实机验收。以下安装步骤仍对应原有模块版。
+新增 **直接修改微信输入法 APK 的独立版**：当前修正版为 `dist/WeType-4.0.0-ColorOSMaterial-1.0.0-direct-r2.apk`，针对表情、键盘选择和定制工具栏将绘制接入改为与模块一致的实际 `drawChild` 回调，并补齐悬浮表情页和 `S10SettingPlusModeOpenView`（排版成图首次确认页）的材质覆盖。无需启用 LSPosed 模块，构建及安装差异见 [direct/README.md](direct/README.md)。该 APK 已重新签名；当前仅有构建、静态和主机 JVM 验证，尚未实机验收。以下安装步骤仍对应原有模块版。
 
 参照本机的小布输入法 `1.8.33.17-mkt` APK，给微信输入法 `3.5.5 / 4.0.0` 的键盘面板接入 ColorOS 17 系统材质。模块包名为 `dev.coloros.wetype.material`，作用域仅为 `com.tencent.wetype`。
 

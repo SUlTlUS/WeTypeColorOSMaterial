@@ -11,8 +11,12 @@ SOURCES = {
     'android/view/View.java': '''package android.view;
 public class View {
  public ViewGroup.LayoutParams params;public int changes;public int[] padding={0,0,0,0};
+ public int left,width; public float translationX;
  public ViewGroup.LayoutParams getLayoutParams(){return params;}
- public void setLayoutParams(ViewGroup.LayoutParams p){params=p;changes++;}
+ public void setLayoutParams(ViewGroup.LayoutParams p){params=p;changes++;width=p.width;}
+ public int getLeft(){return left;}public int getWidth(){return width;}
+ public float getTranslationX(){return translationX;}
+ public void setTranslationX(float x){translationX=x;changes++;}
  public int getPaddingLeft(){return padding[0];}public int getPaddingTop(){return padding[1];}
  public int getPaddingRight(){return padding[2];}public int getPaddingBottom(){return padding[3];}
  public void setPadding(int l,int t,int r,int b){padding=new int[]{l,t,r,b};changes++;}
@@ -55,6 +59,21 @@ public class SizingTest {
   check(icon.params.height==190&&text.getTextSize()==40&&margins.topMargin==30,"stock configuration metrics supersede prior cache");
   fit.apply(140,3.5f);icon.params=new ViewGroup.LayoutParams(77,79);fit.restore();
   check(icon.params.width==77&&icon.params.height==79,"restore preserves a newer layout owner");
+  View face=new View(),glyph=new View();TextView caption=new TextView();
+  face.params=new ViewGroup.LayoutParams(168,168);face.width=168;face.left=30;
+  glyph.params=new ViewGroup.LayoutParams(96,96);glyph.width=96;
+  caption.params=new ViewGroup.MarginLayoutParams();caption.width=110;caption.left=14;
+  ToolbarItemSizing fixed=new ToolbarItemSizing(face,glyph,caption);
+  fixed.apply(140,3.5f);
+  check(face.params.height<168&&glyph.params.height<96,
+      "small row shrinks the circular face and child glyph together");
+  check(Math.abs(caption.getTranslationX()-(face.getLeft()+face.getWidth()*.5f-caption.getLeft()-caption.getWidth()*.5f))<.01f,
+      "label centered on actual circular face");
+  float offset=caption.getTranslationX();fixed.apply(140,3.5f);
+  check(caption.getTranslationX()==offset,"repeated pre-draw alignment remains stable");
+  fixed.restore();
+  check(face.params.width==168&&glyph.params.width==96&&caption.getTranslationX()==0f,
+      "closing editor restores circle glyph and caption placement");
   System.out.println("PASS: "+passed+" toolbar sizing scenarios");
  }
 }''',

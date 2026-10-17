@@ -113,13 +113,13 @@ public final class WeTypeMaterialModule extends XposedModule {
             toolbar = new ToolbarMaterial(this, material, theme);
             clipboard = new ClipboardMaterial(loader, this, this::isMaterialActive, theme, this::requestRefresh);
             try {
-                auxiliary = new AuxiliaryPagesMaterial(loader, this, material::isActive,
+                auxiliary = new AuxiliaryPagesMaterial(loader, this, this::isAuxiliaryMaterialActive,
                         theme, this::requestRefresh);
             } catch (Exception | LinkageError error) {
                 error("auxiliary pages not available on this WeType build", error);
             }
-            floating = new FloatingMaterial(loader, this, theme, clipboard, () -> inputView.get(),
-                    this::isMaterialActive);
+            floating = new FloatingMaterial(loader, this, theme, clipboard, auxiliary,
+                    () -> inputView.get(), this::isMaterialActive);
             Class<?> keyboardTypes = Class.forName(PREFIX + "keyboard.u", false, loader);
             add(method(keyboardTypes, "b", int.class), chain ->
                     (Boolean.TRUE.equals(nativeUpdate.get()) || material.isActive())
@@ -285,6 +285,15 @@ public final class WeTypeMaterialModule extends XposedModule {
 
     private boolean isMaterialActive() {
         return material.isActive() || (floating != null && floating.isActive());
+    }
+
+    private boolean isAuxiliaryMaterialActive() {
+        // The keyboard content is reparented into an independent PopupWindow in
+        // floating mode. Never clear that window's page skins just because the
+        // docked window remains active (or vice versa).
+        return auxiliary != null && auxiliary.usingFloatingRoot()
+                ? floating != null && floating.isPopupActive()
+                : material != null && material.isActive();
     }
 
     private void recoverContent(View view) {

@@ -19,6 +19,7 @@ final class FloatingMaterial {
     private final ColorOsMaterial material;
     private final ToolbarMaterial toolbar;
     private final ClipboardMaterial clipboard;
+    private final AuxiliaryPagesMaterial auxiliary;
     private final Supplier<View> mainRoot;
     private final FloatingPreviewMaterial previews;
     private final Method getSurface, getContent;
@@ -35,9 +36,10 @@ final class FloatingMaterial {
     private int width, height;
 
     FloatingMaterial(ClassLoader loader, WeTypeMaterialModule module, WeTypeTheme theme,
-                     ClipboardMaterial clipboard, Supplier<View> mainRoot,
-                     BooleanSupplier active) throws Exception {
-        this.module = module; this.theme = theme; this.clipboard = clipboard; this.mainRoot = mainRoot;
+                     ClipboardMaterial clipboard, AuxiliaryPagesMaterial auxiliary,
+                     Supplier<View> mainRoot, BooleanSupplier active) throws Exception {
+        this.module = module; this.theme = theme; this.clipboard = clipboard;
+        this.auxiliary = auxiliary; this.mainRoot = mainRoot;
         material = new ColorOsMaterial(loader, module, theme, true);
         toolbar = new ToolbarMaterial(module, material, theme);
         Class<?> content = targetType(loader, "com.tencent.wetype.plugin.hld.float.e");
@@ -117,6 +119,8 @@ final class FloatingMaterial {
 
     boolean isActive() { return !suspended && (material.isActive() || (previews != null && previews.isActive())); }
 
+    boolean isPopupActive() { return !suspended && material.isActive(); }
+
     void resume() { suspended = false; if (previews != null) previews.resume(); refresh(true); }
 
     void suspend() {
@@ -146,6 +150,12 @@ final class FloatingMaterial {
                 normalAlpha = normalBackground.getAlpha(); normalBackground.setAlpha(0f);
             }
             if (editFrame != null) editFrame.apply();
+            // Floating content is a separate View root; scan its active auxiliary
+            // page against the popup blur, not the hidden docked IME panel.
+            if (auxiliary != null) {
+                auxiliary.attachFloating(popup);
+                if (force) auxiliary.refresh();
+            }
             clipboard.attach(popup); clipboard.refresh(); toolbar.refresh();
         } catch (Exception | LinkageError error) {
             restore();
@@ -174,6 +184,11 @@ final class FloatingMaterial {
     }
 
     private void restore() {
+        if (auxiliary != null && auxiliary.usingFloatingRoot()) {
+            View docked = mainRoot.get();
+            if (docked != null) auxiliary.attach(docked);
+            else auxiliary.detach();
+        }
         if (popup != null) clipboard.clear();
         toolbar.clear(); material.release();
         for (Saved state : saved.values()) if (belongsToPopup(state.view)) state.restore();

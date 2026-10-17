@@ -24,6 +24,7 @@ public final class ApkInstrumenter {
                 "keyboard/S30KeyboardChooseKeyboard", "keyboard/selfdraw/S11EmojiKeyboard"}) target(panel, "f0 g0");
         target("view/settingkeyboard/S10SettingCustomToolbarView", "setVisibility");
         target("view/settingkeyboard/S10SettingKeyboardTypeView", "");
+        target("view/settingkeyboard/S10SettingPlusModeOpenView", "d e");
         target("candidate/TabContainerView", "onDraw");
         target("float/e", "onAttachedToWindow onDetachedFromWindow");
         target("float/f$g", "g");

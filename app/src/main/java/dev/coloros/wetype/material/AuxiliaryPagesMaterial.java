@@ -31,11 +31,11 @@ import java.util.function.BooleanSupplier;
  * Never touches the separate Settings Activity or emoji bitmap/text rendering.
  */
 final class AuxiliaryPagesMaterial {
-    private static final int CLEAR = 1, CARD = 2, ICON = 3, BACKPLATE = 5;
+    private static final int CLEAR = 1, CARD = 2, ICON = 3, BACKPLATE = 5, DIALOG_CARD = 6;
     private final WeTypeMaterialModule module;
     private final BooleanSupplier active;
     private final WeTypeTheme theme;
-    private final Class<?> chooser, emoji, custom, keyboardType, chooserItem, customItem;
+    private final Class<?> chooser, emoji, custom, keyboardType, chooserItem, customItem, plusModeOpen;
     private final Method configureToolbarScroll;
     private final int chooserType, emojiType;
     private final String shaderSource;
@@ -48,9 +48,13 @@ final class AuxiliaryPagesMaterial {
     private final ViewTreeObserver.OnGlobalLayoutListener layout = this::refresh;
     private final ViewTreeObserver.OnPreDrawListener preDraw = () -> {
         reconcile();
+        // A lazy S10 editor may attach before its rows have final dimensions.
+        // Recheck after OEM layout, not only at its first GlobalLayout event.
+        refreshToolbarBeforeDraw();
         return true;
     };
     private View root;
+    private boolean floatingRoot;
     private ViewTreeObserver observer;
     private XiaobuKeyShader shader;
     private boolean shaderFailed, logged, coveredDrawLogged;
@@ -68,6 +72,12 @@ final class AuxiliaryPagesMaterial {
         keyboardType = Class.forName(base + "view.settingkeyboard.S10SettingKeyboardTypeView", false, loader);
         chooserItem = Class.forName(base + "view.settingkeyboard.S10SettingItemView", false, loader);
         customItem = Class.forName(base + "view.settingkeyboard.c", false, loader);
+        Class<?> plus = null;
+        try {
+            plus = Class.forName(base + "view.settingkeyboard.S10SettingPlusModeOpenView", false, loader);
+        } catch (ClassNotFoundException ignored) { // Older WeType releases omit this optional page.
+        }
+        plusModeOpen = plus;
         configureToolbarScroll = Class.forName(base
                 + "view.toolbar.S10CustomToolbarHorizontalScrollView", false, loader)
                 .getMethod("a", int.class, int.class, int.class, int.class);
@@ -100,6 +110,21 @@ final class AuxiliaryPagesMaterial {
             view.post(this::refresh);
             return result;
         });
+        // The first-use Plus confirmation (including text poster, from=114) is
+        // an S10 input panel, not an Android dialog. It needs its own refresh
+        // when the content is opened/closed without changing keyboard type.
+        if (plusModeOpen != null) {
+            for (Method callback : new Method[]{
+                    plusModeOpen.getMethod("d", View.class, android.os.Bundle.class, boolean.class),
+                    plusModeOpen.getMethod("e")}) {
+                module.add(callback, chain -> {
+                    Object result = chain.proceed();
+                    View view = (View) chain.getThisObject();
+                    view.post(() -> { refresh(); requestRefresh.run(); });
+                    return result;
+                });
+            }
+        }
         // S10 lazily inflates the same keyboard-type sheet outside S30. It uses
         // View.setVisibility(), including at the end of its close animation.
         module.add(View.class.getDeclaredMethod("setVisibility", int.class), chain -> {
@@ -150,10 +175,17 @@ final class AuxiliaryPagesMaterial {
                 && (chooser.isInstance(panel) || keyboardType.isInstance(panel));
     }
 
-    void attach(View view) {
-        if (root == view) { observe(view); return; }
+    void attach(View view) { attach(view, false); }
+
+    void attachFloating(View view) { attach(view, true); }
+
+    boolean usingFloatingRoot() { return floatingRoot; }
+
+    private void attach(View view, boolean floating) {
+        if (root == view) { floatingRoot = floating; observe(view); return; }
         detach();
         root = view;
+        floatingRoot = floating;
         observe(view);
     }
 
@@ -177,6 +209,7 @@ final class AuxiliaryPagesMaterial {
         clear();
         observer = null;
         root = null;
+        floatingRoot = false;
         foreground.clear();
     }
 
@@ -197,10 +230,19 @@ final class AuxiliaryPagesMaterial {
         }
     }
 
+    private void refreshToolbarBeforeDraw() {
+        View panel = foreground.get();
+        if (panel != null && custom.isInstance(panel)) adjustToolbarPaging(panel);
+    }
+
+    private boolean isPlusPage(View view) {
+        return plusModeOpen != null && plusModeOpen.isInstance(view);
+    }
+
     private void scan(View view, boolean inside) {
         if (!view.isShown()) return;
         boolean page = chooser.isInstance(view) || keyboardType.isInstance(view)
-                || emoji.isInstance(view) || custom.isInstance(view);
+                || emoji.isInstance(view) || custom.isInstance(view) || isPlusPage(view);
         if (page) {
             inside = true;
             // A nested toolbar editor covers the settings grid; chooser covers the normal
@@ -219,13 +261,13 @@ final class AuxiliaryPagesMaterial {
     }
 
     private int precedence(View view) {
-        return custom.isInstance(view) ? 3
+        return isPlusPage(view) ? 4 : custom.isInstance(view) ? 3
                 : chooser.isInstance(view) || keyboardType.isInstance(view) ? 2 : 1;
     }
 
     private int role(View view) {
         if (chooser.isInstance(view) || emoji.isInstance(view) || custom.isInstance(view)
-                || keyboardType.isInstance(view)) return CLEAR;
+                || keyboardType.isInstance(view) || isPlusPage(view)) return CLEAR;
         if (chooserItem.isInstance(view)) return CARD;
         // Custom toolbar editor: the module-added NEW_G2 item CARD is the
         // unwanted little rounded rectangle. Keep its inner ICON surface so
@@ -239,6 +281,8 @@ final class AuxiliaryPagesMaterial {
             case 2131297427: // s10_setting_item_icon_bg
             case 2131297423: // s10_setting_custom_toolbar_item_icon_bg
                 return ICON;
+            case 2131297242: // plus_mode_bg, rounded confirmation card in WeType 4.0.0 e3.xml
+                return DIALOG_CARD;
             case 2131296784: // emoji_type_root, actual category item (not fullscreen RecyclerView)
                 // Leave the inner emoji_item_container_rl's circular selection
                 // drawable intact; only remove our outer rectangular surface.
@@ -359,12 +403,18 @@ final class AuxiliaryPagesMaterial {
                     cell.setLayoutParams(params);
                     resized = true;
                 }
-                View icon = cell.findViewById(2131297422);
+                View face = cell.findViewById(2131297423); // true circular icon_bg
+                View glyph = cell.findViewById(2131297422); // ImageView inside icon_bg
                 View text = cell.findViewById(2131297424);
-                if (icon != null && text instanceof TextView) {
+                if (face != null && text instanceof TextView) {
                     ToolbarItemSizing sizing = toolbarSizing.get(cell);
+                    if (sizing != null && !sizing.owns(face, glyph, (TextView) text)) {
+                        // WeType may rebuild a cell in place after a skin/page change.
+                        sizing.restore();
+                        sizing = null;
+                    }
                     if (sizing == null) {
-                        sizing = new ToolbarItemSizing(icon, (TextView) text);
+                        sizing = new ToolbarItemSizing(face, glyph, (TextView) text);
                         toolbarSizing.put(cell, sizing);
                     }
                     int available = Math.min(row.getHeight(), cell.getHeight())
@@ -499,6 +549,8 @@ final class AuxiliaryPagesMaterial {
                 if (!entry.view.isEnabled()) fill = dark ? 0x18ffffff : 0x55ffffff;
                 if (entry.role == BACKPLATE)
                     fill = dark ? 0x1effffff : 0x40ffffff; // broad grid backplate, not an opaque card
+                // DIALOG_CARD deliberately keeps its original bounds and radius;
+                // unlike chooser cells it must not gain an extra 4dp inset.
                 float radius = entry.role == ICON ? Math.min(shape.width(), shape.height()) / 2f
                         : Math.min(entry.corner(), Math.min(shape.width(), shape.height()) / 2f);
                 if (shader == null) shader = new XiaobuKeyShader(shaderSource);
